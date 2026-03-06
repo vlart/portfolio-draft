@@ -1,0 +1,221 @@
+/**
+ * Contentlayer Configuration
+ *
+ * Defines content schemas for MDX files used with Decap CMS.
+ * When using Contentlayer, rename this file to contentlayer.config.ts
+ * and install dependencies:
+ *
+ * npm install contentlayer next-contentlayer
+ *
+ * Then update next.config.js to use withContentlayer wrapper.
+ */
+
+import { defineDocumentType, makeSource } from 'contentlayer/source-files'
+
+/**
+ * Blog Post Document Type
+ */
+export const BlogPost = defineDocumentType(() => ({
+  name: 'BlogPost',
+  filePathPattern: `blog/**/*.mdx`,
+  contentType: 'mdx',
+  fields: {
+    title: {
+      type: 'string',
+      description: 'The title of the post',
+      required: true,
+    },
+    description: {
+      type: 'string',
+      description: 'Short description for SEO and previews',
+      required: true,
+    },
+    date: {
+      type: 'date',
+      description: 'Publication date',
+      required: true,
+    },
+    updatedAt: {
+      type: 'date',
+      description: 'Last update date',
+      required: false,
+    },
+    tags: {
+      type: 'list',
+      of: { type: 'string' },
+      description: 'List of tags',
+      required: false,
+    },
+    featuredImage: {
+      type: 'string',
+      description: 'Path to featured image',
+      required: false,
+    },
+    featuredImageAlt: {
+      type: 'string',
+      description: 'Alt text for featured image',
+      required: false,
+    },
+    published: {
+      type: 'boolean',
+      description: 'Whether the post is published',
+      default: true,
+    },
+    locale: {
+      type: 'string',
+      description: 'Content locale (en, ro, etc.)',
+      default: 'en',
+    },
+    seo: {
+      type: 'nested',
+      description: 'Custom SEO overrides',
+      of: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        keywords: { type: 'list', of: { type: 'string' } },
+      },
+    },
+  },
+  computedFields: {
+    slug: {
+      type: 'string',
+      resolve: (doc) => doc._raw.sourceFileName.replace(/\.mdx$/, ''),
+    },
+    url: {
+      type: 'string',
+      resolve: (doc) => `/blog/${doc._raw.sourceFileName.replace(/\.mdx$/, '')}`,
+    },
+  },
+}))
+
+/**
+ * Project Document Type
+ */
+export const Project = defineDocumentType(() => ({
+  name: 'Project',
+  filePathPattern: `projects/**/*.mdx`,
+  contentType: 'mdx',
+  fields: {
+    title: {
+      type: 'string',
+      description: 'Project title',
+      required: true,
+    },
+    description: {
+      type: 'string',
+      description: 'Short description',
+      required: true,
+    },
+    featuredImage: {
+      type: 'string',
+      description: 'Path to featured image',
+      required: false,
+    },
+    featuredImageAlt: {
+      type: 'string',
+      description: 'Alt text for featured image',
+      required: false,
+    },
+    gallery: {
+      type: 'list',
+      of: { type: 'string' },
+      description: 'Gallery image paths',
+      required: false,
+    },
+    technologies: {
+      type: 'list',
+      of: { type: 'string' },
+      description: 'Technologies used',
+      required: false,
+    },
+    category: {
+      type: 'string',
+      description: 'Project category',
+      required: false,
+    },
+    status: {
+      type: 'enum',
+      options: ['completed', 'in-progress', 'archived'],
+      description: 'Project status',
+      default: 'completed',
+    },
+    startDate: {
+      type: 'date',
+      description: 'Project start date',
+      required: true,
+    },
+    endDate: {
+      type: 'date',
+      description: 'Project end date',
+      required: false,
+    },
+    featured: {
+      type: 'boolean',
+      description: 'Whether to feature this project',
+      default: false,
+    },
+    published: {
+      type: 'boolean',
+      description: 'Whether the project is published',
+      default: true,
+    },
+    demoUrl: {
+      type: 'string',
+      description: 'Live demo URL',
+      required: false,
+    },
+    githubUrl: {
+      type: 'string',
+      description: 'GitHub repository URL',
+      required: false,
+    },
+    client: {
+      type: 'string',
+      description: 'Client or company name',
+      required: false,
+    },
+    role: {
+      type: 'string',
+      description: 'Your role in the project',
+      required: false,
+    },
+    teamSize: {
+      type: 'number',
+      description: 'Number of team members',
+      required: false,
+    },
+    achievements: {
+      type: 'list',
+      of: { type: 'string' },
+      description: 'Key achievements or results',
+      required: false,
+    },
+    locale: {
+      type: 'string',
+      description: 'Content locale',
+      default: 'en',
+    },
+  },
+  computedFields: {
+    slug: {
+      type: 'string',
+      resolve: (doc) => doc._raw.sourceFileName.replace(/\.mdx$/, ''),
+    },
+    url: {
+      type: 'string',
+      resolve: (doc) => `/projects/${doc._raw.sourceFileName.replace(/\.mdx$/, '')}`,
+    },
+  },
+}))
+
+/**
+ * Contentlayer Source Configuration
+ */
+export default makeSource({
+  contentDirPath: 'content',
+  documentTypes: [BlogPost, Project],
+  mdx: {
+    remarkPlugins: [],
+    rehypePlugins: [],
+  },
+})

@@ -1,0 +1,254 @@
+/**
+ * Telegram Service (Example - Not Active)
+ *
+ * Service for automatically posting blog posts to a Telegram channel.
+ * This is decoupled from the CMS - it works with domain models (BlogPost).
+ *
+ * To activate:
+ * 1. Create a Telegram bot via @BotFather
+ * 2. Get bot token and channel ID
+ * 3. Set environment variables: TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID
+ * 4. Rename this file to TelegramService.ts
+ * 5. Set up webhook or GitHub Action to trigger on new posts
+ */
+
+import { BlogPost } from '../../domain/models/BlogPost'
+import { Project } from '../../domain/models/Project'
+
+interface TelegramConfig {
+  botToken: string
+  channelId: string
+}
+
+interface TelegramMessage {
+  text: string
+  parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2'
+  disable_web_page_preview?: boolean
+  disable_notification?: boolean
+}
+
+export class TelegramService {
+  private botToken: string
+  private channelId: string
+  private apiUrl: string
+
+  constructor(config: TelegramConfig) {
+    this.botToken = config.botToken
+    this.channelId = config.channelId
+    this.apiUrl = `https://api.telegram.org/bot${this.botToken}`
+  }
+
+  /**
+   * Post a blog post to Telegram channel
+   */
+  async postBlogPost(post: BlogPost, siteUrl: string): Promise<void> {
+    const message = this.formatBlogPostMessage(post, siteUrl)
+
+    try {
+      await this.sendMessage(message)
+      console.log(`✓ Posted to Telegram: ${post.title}`)
+    } catch (error) {
+      console.error(`✗ Failed to post to Telegram: ${post.title}`, error)
+      throw error
+    }
+  }
+
+  /**
+   * Post a project to Telegram channel
+   */
+  async postProject(project: Project, siteUrl: string): Promise<void> {
+    const message = this.formatProjectMessage(project, siteUrl)
+
+    try {
+      await this.sendMessage(message)
+      console.log(`✓ Posted to Telegram: ${project.title}`)
+    } catch (error) {
+      console.error(`✗ Failed to post to Telegram: ${project.title}`, error)
+      throw error
+    }
+  }
+
+  /**
+   * Format blog post as Telegram message
+   */
+  private formatBlogPostMessage(post: BlogPost, siteUrl: string): TelegramMessage {
+    const url = `${siteUrl}/blog/${post.slug}`
+    const tags = post.tags.map(tag => `#${tag.slug.replace(/-/g, '_')}`).join(' ')
+
+    let text = `📝 <b>${this.escapeHtml(post.title)}</b>\n\n`
+    text += `${this.escapeHtml(post.description)}\n\n`
+
+    if (post.readingTime) {
+      text += `⏱ ${post.readingTime} min read\n`
+    }
+
+    if (tags) {
+      text += `\n${tags}\n`
+    }
+
+    text += `\n🔗 <a href="${url}">Read more</a>`
+
+    return {
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: false,
+    }
+  }
+
+  /**
+   * Format project as Telegram message
+   */
+  private formatProjectMessage(project: Project, siteUrl: string): TelegramMessage {
+    const url = `${siteUrl}/projects/${project.slug}`
+    const techs = project.technologies
+      .map(tech => `#${tech.slug.replace(/-/g, '_')}`)
+      .join(' ')
+
+    let text = `🚀 <b>${this.escapeHtml(project.title)}</b>\n\n`
+    text += `${this.escapeHtml(project.description)}\n\n`
+
+    if (project.client) {
+      text += `👥 Client: ${this.escapeHtml(project.client)}\n`
+    }
+
+    if (project.role) {
+      text += `💼 Role: ${this.escapeHtml(project.role)}\n`
+    }
+
+    if (techs) {
+      text += `\n⚡️ ${techs}\n`
+    }
+
+    text += `\n🔗 <a href="${url}">View project</a>`
+
+    if (project.links.demo) {
+      text += ` | <a href="${project.links.demo}">Live demo</a>`
+    }
+
+    if (project.links.github) {
+      text += ` | <a href="${project.links.github}">GitHub</a>`
+    }
+
+    return {
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: false,
+    }
+  }
+
+  /**
+   * Send a message to the Telegram channel
+   */
+  private async sendMessage(message: TelegramMessage): Promise<void> {
+    const response = await fetch(`${this.apiUrl}/sendMessage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: this.channelId,
+        ...message,
+      }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(`Telegram API error: ${error.description}`)
+    }
+  }
+
+  /**
+   * Escape HTML special characters
+   */
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
+
+  /**
+   * Test connection to Telegram API
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.apiUrl}/getMe`)
+      return response.ok
+    } catch (error) {
+      return false
+    }
+  }
+}
+
+/**
+ * Factory function to create Telegram service from environment variables
+ */
+export function createTelegramService(): TelegramService | null {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const channelId = process.env.TELEGRAM_CHANNEL_ID
+
+  if (!botToken || !channelId) {
+    console.warn('Telegram integration not configured (missing env vars)')
+    return null
+  }
+
+  return new TelegramService({ botToken, channelId })
+}
+
+/**
+ * Example usage in API route or webhook:
+ *
+ * // app/api/webhooks/publish/route.ts
+ * import { createContentRepository } from '@/lib/repositories/factory'
+ * import { createTelegramService } from '@/lib/integrations/telegram/TelegramService'
+ *
+ * export async function POST(request: Request) {
+ *   const { slug } = await request.json()
+ *
+ *   const repository = createContentRepository()
+ *   const post = await repository.getPost(slug)
+ *
+ *   const telegram = createTelegramService()
+ *   if (telegram) {
+ *     await telegram.postBlogPost(post, process.env.NEXT_PUBLIC_SITE_URL!)
+ *   }
+ *
+ *   return Response.json({ success: true })
+ * }
+ */
+
+/**
+ * Example GitHub Action (for Decap CMS):
+ *
+ * .github/workflows/telegram-post.yml:
+ *
+ * name: Telegram Auto-Post
+ * on:
+ *   push:
+ *     branches: [main]
+ *     paths:
+ *       - 'content/blog/**'
+ *
+ * jobs:
+ *   post:
+ *     runs-on: ubuntu-latest
+ *     steps:
+ *       - uses: actions/checkout@v3
+ *
+ *       - name: Get changed files
+ *         id: changed-files
+ *         uses: tj-actions/changed-files@v35
+ *         with:
+ *           files: content/blog/**
+ *
+ *       - name: Post to Telegram
+ *         if: steps.changed-files.outputs.any_changed == 'true'
+ *         run: |
+ *           # Extract slug from changed file
+ *           # Call webhook endpoint
+ *           curl -X POST ${{ secrets.SITE_URL }}/api/webhooks/publish \
+ *             -H "Content-Type: application/json" \
+ *             -H "Authorization: Bearer ${{ secrets.WEBHOOK_SECRET }}" \
+ *             -d '{"slug": "extracted-slug"}'
+ */

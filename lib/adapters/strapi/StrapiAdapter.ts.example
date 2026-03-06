@@ -1,0 +1,346 @@
+/**
+ * Strapi Adapter (Example - Not Active)
+ *
+ * This is an example implementation showing how to implement
+ * the ContentRepository interface for Strapi CMS.
+ *
+ * To activate:
+ * 1. Rename this file to StrapiAdapter.ts
+ * 2. Install Strapi SDK: npm install @strapi/client (or use fetch directly)
+ * 3. Set environment variables: STRAPI_API_URL, STRAPI_API_TOKEN
+ * 4. Update NEXT_PUBLIC_CMS_PROVIDER=strapi
+ * 5. Deploy
+ */
+
+import {
+  ContentRepository,
+  ContentNotFoundError,
+  RepositoryError,
+} from '../../repositories/ContentRepository'
+import { BlogPost, calculateReadingTime } from '../../domain/models/BlogPost'
+import { Project } from '../../domain/models/Project'
+import { Tag } from '../../domain/models/Tag'
+import { DEFAULT_AUTHOR } from '../../domain/models/Author'
+
+interface StrapiConfig {
+  apiUrl: string
+  apiToken: string
+}
+
+export class StrapiAdapter implements ContentRepository {
+  private apiUrl: string
+  private apiToken: string
+
+  constructor(config: StrapiConfig) {
+    this.apiUrl = config.apiUrl
+    this.apiToken = config.apiToken
+  }
+
+  async getPost(slug: string): Promise<BlogPost> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/blog-posts?filters[slug][$eq]=${slug}&populate=*`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 60 }, // ISR: revalidate every 60 seconds
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.data || data.data.length === 0) {
+        throw new ContentNotFoundError('post', slug)
+      }
+
+      return this.transformToBlogPost(data.data[0])
+    } catch (error) {
+      if (error instanceof ContentNotFoundError) {
+        throw error
+      }
+      throw new RepositoryError(`Failed to get post: ${slug}`, error as Error)
+    }
+  }
+
+  async getAllPosts(): Promise<BlogPost[]> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/blog-posts?populate=*&sort=publishedAt:desc`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 60 },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return data.data.map((post: any) => this.transformToBlogPost(post))
+    } catch (error) {
+      throw new RepositoryError('Failed to get all posts', error as Error)
+    }
+  }
+
+  async getPostsByTag(tagSlug: string): Promise<BlogPost[]> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/blog-posts?filters[tags][slug][$eq]=${tagSlug}&populate=*`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 60 },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return data.data.map((post: any) => this.transformToBlogPost(post))
+    } catch (error) {
+      throw new RepositoryError(`Failed to get posts by tag: ${tagSlug}`, error as Error)
+    }
+  }
+
+  async getProject(slug: string): Promise<Project> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/projects?filters[slug][$eq]=${slug}&populate=*`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 60 },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.data || data.data.length === 0) {
+        throw new ContentNotFoundError('project', slug)
+      }
+
+      return this.transformToProject(data.data[0])
+    } catch (error) {
+      if (error instanceof ContentNotFoundError) {
+        throw error
+      }
+      throw new RepositoryError(`Failed to get project: ${slug}`, error as Error)
+    }
+  }
+
+  async getAllProjects(): Promise<Project[]> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/projects?populate=*&sort=startDate:desc`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 60 },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return data.data.map((project: any) => this.transformToProject(project))
+    } catch (error) {
+      throw new RepositoryError('Failed to get all projects', error as Error)
+    }
+  }
+
+  async getFeaturedProjects(): Promise<Project[]> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/projects?filters[featured][$eq]=true&filters[published][$eq]=true&populate=*`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 60 },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return data.data.map((project: any) => this.transformToProject(project))
+    } catch (error) {
+      throw new RepositoryError('Failed to get featured projects', error as Error)
+    }
+  }
+
+  async getAllTags(): Promise<Tag[]> {
+    try {
+      const response = await fetch(`${this.apiUrl}/api/tags?sort=name:asc`, {
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+        },
+        next: { revalidate: 3600 }, // Tags don't change often, cache for 1 hour
+      })
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return data.data.map((tag: any) => this.transformToTag(tag))
+    } catch (error) {
+      throw new RepositoryError('Failed to get all tags', error as Error)
+    }
+  }
+
+  async getTag(slug: string): Promise<Tag> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/api/tags?filters[slug][$eq]=${slug}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+          next: { revalidate: 3600 },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Strapi API error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.data || data.data.length === 0) {
+        throw new ContentNotFoundError('tag', slug)
+      }
+
+      return this.transformToTag(data.data[0])
+    } catch (error) {
+      if (error instanceof ContentNotFoundError) {
+        throw error
+      }
+      throw new RepositoryError(`Failed to get tag: ${slug}`, error as Error)
+    }
+  }
+
+  /**
+   * Transform Strapi blog post to domain BlogPost model
+   */
+  private transformToBlogPost(strapiPost: any): BlogPost {
+    const attrs = strapiPost.attributes
+
+    return {
+      id: strapiPost.id.toString(),
+      slug: attrs.slug,
+      title: attrs.title,
+      description: attrs.description,
+      content: attrs.content,
+      publishedAt: new Date(attrs.publishedAt || attrs.createdAt),
+      updatedAt: new Date(attrs.updatedAt),
+      author: attrs.author?.data
+        ? {
+            id: attrs.author.data.id.toString(),
+            name: attrs.author.data.attributes.name,
+            bio: attrs.author.data.attributes.bio,
+            avatar: attrs.author.data.attributes.avatar?.data?.attributes.url
+              ? `${this.apiUrl}${attrs.author.data.attributes.avatar.data.attributes.url}`
+              : undefined,
+          }
+        : DEFAULT_AUTHOR,
+      tags: attrs.tags?.data.map((tag: any) => this.transformToTag(tag)) || [],
+      featuredImage: attrs.featuredImage?.data
+        ? {
+            url: `${this.apiUrl}${attrs.featuredImage.data.attributes.url}`,
+            alt:
+              attrs.featuredImage.data.attributes.alternativeText || attrs.title,
+            width: attrs.featuredImage.data.attributes.width,
+            height: attrs.featuredImage.data.attributes.height,
+          }
+        : undefined,
+      published: attrs.published ?? true,
+      readingTime: attrs.readingTime || calculateReadingTime(attrs.content),
+      locale: attrs.locale || 'en',
+      seo: attrs.seo,
+    }
+  }
+
+  /**
+   * Transform Strapi project to domain Project model
+   */
+  private transformToProject(strapiProject: any): Project {
+    const attrs = strapiProject.attributes
+
+    return {
+      id: strapiProject.id.toString(),
+      slug: attrs.slug,
+      title: attrs.title,
+      description: attrs.description,
+      content: attrs.content,
+      featuredImage: attrs.featuredImage?.data
+        ? {
+            url: `${this.apiUrl}${attrs.featuredImage.data.attributes.url}`,
+            alt:
+              attrs.featuredImage.data.attributes.alternativeText || attrs.title,
+            width: attrs.featuredImage.data.attributes.width,
+            height: attrs.featuredImage.data.attributes.height,
+          }
+        : undefined,
+      gallery:
+        attrs.gallery?.data.map((img: any) => ({
+          url: `${this.apiUrl}${img.attributes.url}`,
+          alt: img.attributes.alternativeText || '',
+          width: img.attributes.width,
+          height: img.attributes.height,
+        })) || [],
+      technologies:
+        attrs.technologies?.data.map((tag: any) => this.transformToTag(tag)) || [],
+      category: attrs.category,
+      status: attrs.status || 'completed',
+      startDate: new Date(attrs.startDate),
+      endDate: attrs.endDate ? new Date(attrs.endDate) : undefined,
+      featured: attrs.featured ?? false,
+      published: attrs.published ?? true,
+      links: attrs.links || {},
+      client: attrs.client,
+      role: attrs.role,
+      teamSize: attrs.teamSize,
+      achievements: attrs.achievements,
+      locale: attrs.locale || 'en',
+      createdAt: new Date(attrs.createdAt),
+      updatedAt: new Date(attrs.updatedAt),
+    }
+  }
+
+  /**
+   * Transform Strapi tag to domain Tag model
+   */
+  private transformToTag(strapiTag: any): Tag {
+    const attrs = strapiTag.attributes
+
+    return {
+      id: strapiTag.id.toString(),
+      name: attrs.name,
+      slug: attrs.slug,
+      description: attrs.description,
+      color: attrs.color,
+    }
+  }
+}
